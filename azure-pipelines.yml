@@ -28,10 +28,18 @@ stages:
           parallel: 4
         steps:
           - task: Cache@2
+            displayName: 'Cache: nuke-temp'
             inputs:
-              key: $(Agent.OS) | **/global.json, **/*.csproj
-              restoreKeys: $(Agent.OS)
-              path: ~/.nuget/packages
+              key: $(Agent.OS) | nuke-temp | **/global.json, **/*.csproj, **/Directory.Packages.props
+              restoreKeys: $(Agent.OS) | nuke-temp
+              path: .nuke/temp
+          - task: Cache@2
+            displayName: 'Cache: nuget-packages'
+            inputs:
+              key: $(Agent.OS) | nuget-packages | **/global.json, **/*.csproj, **/Directory.Packages.props
+              restoreKeys: $(Agent.OS) | nuget-packages
+              path: $(USERPROFILE)/.nuget/packages
           - task: CmdLine@2
+            displayName: 'Run: Restore, Compile, Test'
             inputs:
               script: './build.cmd Restore Compile Test --skip --partition $(System.JobPositionInPhase)/4'
