@@ -139,3 +139,9 @@ output/test-results/*
 # Don't ignore the Dapper-Extensions Sql folder
 # This is needed for Dapper-Extensions to work properly
 !src/Abp.Dapper/Dapper-Extensions/Sql/
+
+/.nuke/temp
+/output/lib
+/_remover_obj.cmd
+/Introduction - NUKE.url
+/output/lib-signed
