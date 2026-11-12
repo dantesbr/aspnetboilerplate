@@ -285,7 +285,7 @@ public class CustomFilterSampleDbContext : AbpZeroDbContext<Tenant, Role, User, 
             {
                 var abpEfCoreCurrentDbContext = this.GetService<AbpEfCoreCurrentDbContext>();
                 mayHaveOUFilter = e => MayHaveOrganizationUnitFilter(((IMayHaveOrganizationUnit)e).OrganizationUnitId, CurrentOUId, true);
-                modelBuilder.HasDbFunction(typeof(AbpProjectNameDbContext).GetMethod(nameof(MayHaveOrganizationUnitFilter), new []{ typeof(long?), typeof(long?), typeof(bool) })!)
+                modelBuilder.HasDbFunction(typeof(CustomFilterSampleDbContext).GetMethod(nameof(MayHaveOrganizationUnitFilter), new []{ typeof(long?), typeof(long?), typeof(bool) })!)
                     .HasTranslation(args =>
                     {
                         // (long? organizationUnitId, long? currentOUId, bool boolParam)
@@ -293,7 +293,10 @@ public class CustomFilterSampleDbContext : AbpZeroDbContext<Tenant, Role, User, 
                         var currentOUId = args[1];
                         var boolParam = args[2];
 
-                        if (abpEfCoreCurrentDbContext.Context?.As<AbpProjectNameDbContext>().IsOUFilterEnabled == true)
+                        // Throws when there is no current DbContext, instead of running the query without the filter.
+                        var dbContext = abpEfCoreCurrentDbContext.GetRequiredContext().As<CustomFilterSampleDbContext>();
+
+                        if (dbContext.IsOUFilterEnabled)
                         {
                             // organizationUnitId == currentOUId
                             return new SqlBinaryExpression(
@@ -305,7 +308,7 @@ public class CustomFilterSampleDbContext : AbpZeroDbContext<Tenant, Role, User, 
                         }
 
                         // empty where sql
-                        return new SqlConstantExpression(Expression.Constant(true), boolParam.TypeMapping);
+                        return new SqlConstantExpression(true, boolParam.Type, boolParam.TypeMapping);
                     });
             }
 
@@ -322,7 +325,9 @@ public class CustomFilterSampleDbContext : AbpZeroDbContext<Tenant, Role, User, 
 
     public override string GetCompiledQueryCacheKey()
     {
-        return $"{base.GetCompiledQueryCacheKey()}:{CurrentOUId}:{IsOUFilterEnabled}";
+        // Only the filter state is inlined into the SQL. CurrentOUId is sent as a SQL parameter,
+        // so it must not be part of the key; otherwise the query is recompiled for every value.
+        return $"{base.GetCompiledQueryCacheKey()}:{IsOUFilterEnabled}";
     }
 	
     protected virtual int? GetCurrentUsersOuIdOrNull()
@@ -337,6 +342,18 @@ public class CustomFilterSampleDbContext : AbpZeroDbContext<Tenant, Role, User, 
     }
 }
 ````
+
+##### Limitations of User-defined function mapping
+
+When `UseAbpQueryCompiler` is enabled, `EF.CompileQuery` and `EF.CompileAsyncQuery` cannot use the soft delete and tenant filters, or your own filters that call `AbpEfCoreCurrentDbContext.GetRequiredContext()`. Queries that need these filters throw an `AbpException`. Queries that don't need them, for example with `IgnoreQueryFilters()`, are not affected.
+
+Run these queries as normal LINQ queries, or set `UseAbpQueryCompiler` to `false`. The data filters still apply when `UseAbpQueryCompiler` is `false`. Use this setting if a third-party library compiles filtered queries itself.
+
+In custom `HasTranslation` callbacks, use `AbpEfCoreCurrentDbContext.GetRequiredContext()` instead of `Context`, as shown above.
+
+Don't replace `ICompiledQueryCacheKeyGenerator` or `IDatabase` with `ReplaceService` while `UseAbpQueryCompiler` is enabled.
+
+If you build EF Core's internal service provider yourself, call `new AbpDbContextOptionsExtension().ApplyServices(services)` after registering the database provider services.
 
 ##### Make User-defined function mapping compatible with [DevExtreme.AspNet.Data's](https://github.com/DevExpress/DevExtreme.AspNet.Data) `IAsyncAdapter`
 
